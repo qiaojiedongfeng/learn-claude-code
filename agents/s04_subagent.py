@@ -51,6 +51,7 @@ def safe_path(p: str) -> Path:
 
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
+    # 先检查一下是否有危险命令，如果有危险命令，就不执行
     if any(d in command for d in dangerous):
         return "Error: Dangerous command blocked"
     try:
@@ -99,6 +100,7 @@ TOOL_HANDLERS = {
 }
 
 # Child gets all base tools except task (no recursive spawning)
+# 除了plan意外，subagent可以使用其它工具
 CHILD_TOOLS = [
     {"name": "bash", "description": "Run a shell command.",
      "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
@@ -114,12 +116,18 @@ CHILD_TOOLS = [
 # -- Subagent: fresh context, filtered tools, summary-only return --
 def run_subagent(prompt: str) -> str:
     sub_messages = [{"role": "user", "content": prompt}]  # fresh context
+    # 最多循环30次
     for _ in range(30):  # safety limit
+        # 封装模型和系统提示词，用户的提示词，可用的工具
         response = client.messages.create(
             model=MODEL, system=SUBAGENT_SYSTEM, messages=sub_messages,
             tools=CHILD_TOOLS, max_tokens=8000,
         )
+        # 每次得把结果也要封装进提示词中
         sub_messages.append({"role": "assistant", "content": response.content})
+        print('stop_reason',response.stop_reason)
+        print('response',response.content)
+        # 如果不是工具调用，就说明结束了
         if response.stop_reason != "tool_use":
             break
         results = []
@@ -127,13 +135,16 @@ def run_subagent(prompt: str) -> str:
             if block.type == "tool_use":
                 handler = TOOL_HANDLERS.get(block.name)
                 output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
+                print('output', output)
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)[:50000]})
+        # 得把工具执行的结果也要追加到提示词里面
         sub_messages.append({"role": "user", "content": results})
     # Only the final text returns to the parent -- child context is discarded
     return "".join(b.text for b in response.content if hasattr(b, "text")) or "(no summary)"
 
 
 # -- Parent tools: base tools + task dispatcher --
+# 相当于主agent多了一个task的tool,这个就是给子agent派活的
 PARENT_TOOLS = CHILD_TOOLS + [
     {"name": "task", "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
      "input_schema": {"type": "object", "properties": {"prompt": {"type": "string"}, "description": {"type": "string", "description": "Short description of the task"}}, "required": ["prompt"]}},
@@ -147,11 +158,14 @@ def agent_loop(messages: list):
             tools=PARENT_TOOLS, max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
+        print('main_agent_message',messages)
+        print('main_agent_stop_reason',response.stop_reason)
         if response.stop_reason != "tool_use":
             return
         results = []
         for block in response.content:
             if block.type == "tool_use":
+                # 如果要用subagent，就是对应的task工具
                 if block.name == "task":
                     desc = block.input.get("description", "subtask")
                     print(f"> task ({desc}): {block.input['prompt'][:80]}")

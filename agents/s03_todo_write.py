@@ -63,12 +63,14 @@ class TodoManager:
             item_id = str(item.get("id", str(i + 1)))
             if not text:
                 raise ValueError(f"Item {item_id}: text required")
+            # 只允许写着三种状态，不允许胡乱写
             if status not in ("pending", "in_progress", "completed"):
                 raise ValueError(f"Item {item_id}: invalid status '{status}'")
             if status == "in_progress":
                 in_progress_count += 1
             validated.append({"id": item_id, "text": text, "status": status})
         if in_progress_count > 1:
+            # 一次只能专注一件事
             raise ValueError("Only one task can be in_progress at a time")
         self.items = validated
         return self.render()
@@ -163,12 +165,14 @@ TOOLS = [
 def agent_loop(messages: list):
     rounds_since_todo = 0
     while True:
+        print('messages',messages)
         # Nag reminder is injected below, alongside tool results
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
+        print('response',response.content)
         if response.stop_reason != "tool_use":
             return
         results = []
