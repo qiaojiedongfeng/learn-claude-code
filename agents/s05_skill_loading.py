@@ -102,7 +102,7 @@ class SkillLoader:
             return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
         return f"<skill name=\"{name}\">\n{skill['body']}\n</skill>"
 
-
+# 先要初始化技能，可以用哪些技能
 SKILL_LOADER = SkillLoader(SKILLS_DIR)
 
 # Layer 1: skill metadata injected into system prompt
@@ -161,7 +161,7 @@ def run_edit(path: str, old_text: str, new_text: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
-
+# 原来是把load_skill也封装成了一个工具了，万物皆工具呀
 TOOL_HANDLERS = {
     "bash":       lambda **kw: run_bash(kw["command"]),
     "read_file":  lambda **kw: run_read(kw["path"], kw.get("limit")),
@@ -169,6 +169,10 @@ TOOL_HANDLERS = {
     "edit_file":  lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
     "load_skill": lambda **kw: SKILL_LOADER.get_content(kw["name"]),
 }
+
+"""
+load_skill只需要传递一个参数，那记忆是skill的name
+"""
 
 TOOLS = [
     {"name": "bash", "description": "Run a shell command.",
@@ -191,6 +195,7 @@ def agent_loop(messages: list):
             tools=TOOLS, max_tokens=8000,
         )
         messages.append({"role": "assistant", "content": response.content})
+        print('response.content:',response.content)
         if response.stop_reason != "tool_use":
             return
         results = []

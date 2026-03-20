@@ -95,7 +95,8 @@ def micro_compact(messages: list) -> list:
 
 # -- Layer 2: auto_compact - save transcript, summarize, replace messages --
 def auto_compact(messages: list) -> list:
-    # Save full transcript to disk
+    # Save full transcript to disk，主要是害怕包含所有细节的原始对话消失，
+    # 相当于“格式化”前做的“硬盘拷贝”，方便后续排除Bug或是人工回溯思路
     TRANSCRIPT_DIR.mkdir(exist_ok=True)
     transcript_path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
     with open(transcript_path, "w") as f:
@@ -114,6 +115,7 @@ def auto_compact(messages: list) -> list:
     )
     summary = response.content[0].text
     # Replace all messages with compressed summary
+    # 在这块就用到了，很贴心的把原始对话的路径也放出来了，万一需要翻历史记录，还可以利用read_file工具进行读取
     return [
         {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path}]\n\n{summary}"},
         {"role": "assistant", "content": "Understood. I have the context from the summary. Continuing."},
